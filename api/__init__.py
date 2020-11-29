@@ -5,7 +5,7 @@ from flask_migrate import  Migrate
 from config import config_factory
 
 db = SQLAlchemy()
-migrage = Migrate()
+migrate = Migrate()
 
 from .views import graph_bp
 from .models.models import Author, Book
@@ -19,7 +19,7 @@ def create_app():
 
     # Database initialization
     db.init_app(app)
-    migrate = migrage.init_app(app, db)
+    migrate.init_app(app, db)
 
     # Views
     app.register_blueprint(graph_bp)
