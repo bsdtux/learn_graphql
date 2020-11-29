@@ -1,17 +1,27 @@
+import os
 from flask import Flask
-from flask_graphql import GraphQLView
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import  Migrate
+from config import config_factory
 
-from api.models.graphql_models import schema
+db = SQLAlchemy()
+migrage = Migrate()
 
-app = Flask(__name__)
+from .views import graph_bp
+from .models.models import Author, Book
 
-app.add_url_rule(
-    '/',
-    view_func=GraphQLView.as_view(
-        'graphql',
-        schema=schema,
-        graphiql=True),
-)
 
-if __name__ == '__main__':
-    app.run(debug=True)
+def create_app():
+    app = Flask(__name__)
+    app_config = config_factory.get(
+        os.environ.get('FLASK_ENV') or 'development')
+    app.config.from_object(app_config)
+
+    # Database initialization
+    db.init_app(app)
+    migrate = migrage.init_app(app, db)
+
+    # Views
+    app.register_blueprint(graph_bp)
+    
+    return app

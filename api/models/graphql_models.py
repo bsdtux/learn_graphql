@@ -1,70 +1,66 @@
 import typing as ty
-import graphene as gh
+from api import db
+import graphene
+from graphene_sqlalchemy import SQLAlchemyObjectType, SQLAlchemyConnectionField
+from .models import Author, Book
 
 
-# Mock DB objects
-class Author(gh.ObjectType):
-    id = gh.Int()
-    name = gh.String()
-    books = gh.Field(gh.List(lambda: Book))
-
-    def resolve_books(parent, info):
-        return [book for book in books if book.authorId == parent.id]
-
-authors = [
-    Author(id=1, name='J. K. Rowling'),
-    Author(id=2, name='J. R. R. Tolkien'),
-    Author(id=3, name='Brent Weeks'),
-]
-
-class Book(gh.ObjectType):
-    id = gh.Int() 
-    name = gh.String()
-    authorId = gh.Int()
-    author = gh.Field(lambda : Author)
-
-    def resolve_author(parent, info):
-        return get_author_by_id(parent.authorId, authors)
-
-books = [
-    Book(id=1, name='Harry Potter and the Chamber of Secrets', authorId=1),
-    Book(id=2, name='Harry Potter and the Prisoner of Azkaban', authorId=1),
-    Book(id=3, name='Harry Potter and the Gobblet of Fire', authorId=1),
-    Book(id=4, name='The Fellowship of the Ring', authorId= 2),
-    Book(id=5, name='The Two Towers', authorId=2),
-    Book(id=6, name='The Return of the King', authorId=2),
-    Book(id=7, name='The Way of Shadows', authorId=3),
-    Book(id=8, name='Beyond the Shadows', authorId=3),
-]
-
-def get_author_by_id(author_id: int, authors: ty.List) -> Author:
-    author = list(filter(lambda x: x.id == author_id, authors))
-    return author[-1] if author else Author()
+# General GraphQL  Objects
+class AuthorObject(SQLAlchemyObjectType):
+    class Meta:
+        model = Author
+        interfaces = (graphene.relay.Node,) 
 
 
-def get_author_books(author_id: int, books: ty.List) -> ty.List:
-    return list(map(lambda x: x.authorId == author_id, books)) or []
+class BookObject(SQLAlchemyObjectType):
+    class Meta:
+        model = Book
+        interfaces = (graphene.relay.Node,)
 
 
-# Schemea
-class Query(gh.ObjectType):
-    books = gh.Field(gh.List(Book))
-    book = gh.Field(Book, id=gh.Int())
-    authors = gh.Field(gh.List(Author))
-    author = gh.Field(Author, id=gh.Int())
+# Schemea Query
+class Query(graphene.ObjectType):
+    node = graphene.relay.Node.Field()
+    all_books = SQLAlchemyConnectionField(BookObject)
+    all_authors = SQLAlchemyConnectionField(AuthorObject)
 
-    def resolve_books(parent, info):
-        return books
+schema_query = graphene.Schema(query=Query)
 
-    def resolve_book(parent, info, id):
-        book = list(filter(lambda x: x.id == id, books))
-        return book[0] if book else Book()
 
-    def resolve_authors(parent, info):
-        return authors
+# Mutation
+class CreateBook(graphene.Mutation):
+    class Arguments:
+        name = graphene.String(required=True)
+        author_name = graphene.String(required=True)
 
-    def resolve_author(parent, info, id):
-        author = get_author_by_id(id, authors)
-        return author
+    book = graphene.Field(lambda: BookObject)
 
-schema = gh.Schema(query=Query)
+    def mutate(parent, info, name, author_name):
+        user = Author.query.filter_by(name=author_name).first()
+        book = Book(name=name)
+        if user is not None:
+            book.author = user
+        db.session.add(book)
+        db.session.commit()
+        return CreateBook(book=book)
+
+
+class CreateAuthor(graphene.Mutation):
+    class Arguments:
+        name = graphene.String(required=True)
+
+    author = graphene.Field(lambda: AuthorObject)
+
+    def mutate(parent, info, name):
+        author = Author(name=name)
+        db.session.add(author)
+        db.session.commit()
+        return CreateAuthor(author=author)
+
+
+class Mutation(graphene.ObjectType):
+    save_book = CreateBook.Field()
+    save_author = CreateAuthor.Field()
+
+# noinspection PyTypeChecker
+schema_mutation = graphene.Schema(query=Query, mutation=Mutation)
